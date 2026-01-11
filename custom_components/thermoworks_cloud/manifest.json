@@ -14,7 +14,7 @@
     "thermoworks_cloud"
   ],
   "requirements": [
-    "thermoworks_cloud==0.1.12"
+    "git+https://github.com/SimonRice/python-thermoworks-cloud.git@main#egg=thermoworks_cloud"
   ],
   "single_config_entry": false,
   "ssdp": [],

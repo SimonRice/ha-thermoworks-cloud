@@ -2,9 +2,37 @@
   "config": {
     "step": {
       "user": {
+        "title": "Choose Authentication Method",
+        "description": "Select how you want to authenticate with ThermoWorks Cloud",
+        "data": {
+          "auth_method": "Authentication Method"
+        },
+        "data_description": {
+          "auth_method": "Choose Email/Password for traditional login, or Google/Apple for OAuth authentication"
+        }
+      },
+      "email": {
+        "title": "Email/Password Authentication",
+        "description": "Enter your ThermoWorks Cloud credentials",
         "data": {
           "email": "[%key:common::config_flow::data::email%]",
           "password": "[%key:common::config_flow::data::password%]"
+        }
+      },
+      "google_credentials": {
+        "title": "Google OAuth Setup",
+        "description": "Create a Google OAuth 2.0 Client at {setup_url}, then enter your credentials below.\n\nFor Authorized redirect URIs, use: `{redirect_uri}`",
+        "data": {
+          "client_id": "OAuth Client ID",
+          "client_secret": "OAuth Client Secret"
+        }
+      },
+      "apple_credentials": {
+        "title": "Apple Sign In Setup",
+        "description": "Create a Sign in with Apple Service ID at {setup_url}, then enter your credentials below.\n\nFor Return URLs, use: `{redirect_uri}`",
+        "data": {
+          "client_id": "Service ID (Client ID)",
+          "client_secret": "Client Secret (Generated JWT)"
         }
       }
     },
@@ -14,7 +42,28 @@
       "unknown": "[%key:common::config_flow::error::unknown%]"
     },
     "abort": {
-      "already_configured": "[%key:common::config_flow::abort::already_configured_account%]"
+      "already_configured": "[%key:common::config_flow::abort::already_configured_account%]",
+      "no_id_token": "No ID token received from OAuth provider",
+      "invalid_auth": "Authentication failed with ThermoWorks",
+      "cannot_connect": "Cannot connect to ThermoWorks Cloud"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "scan_interval": "Scan Interval (seconds)"
+        }
+      }
+    }
+  },
+  "selector": {
+    "auth_method": {
+      "options": {
+        "email": "Email/Password",
+        "google": "Sign in with Google",
+        "apple": "Sign in with Apple"
+      }
     }
   },
   "entity": {
