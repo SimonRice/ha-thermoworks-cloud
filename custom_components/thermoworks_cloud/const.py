@@ -12,17 +12,10 @@ AUTH_METHOD_EMAIL = "email"
 AUTH_METHOD_GOOGLE = "google"
 AUTH_METHOD_APPLE = "apple"
 
-# OAuth configuration
-CONF_CLIENT_ID = "client_id"
-CONF_CLIENT_SECRET = "client_secret"
-CONF_AUTH_IMPLEMENTATION = "auth_implementation"
-
 # OAuth provider IDs for Firebase
 GOOGLE_PROVIDER_ID = "google.com"
 APPLE_PROVIDER_ID = "apple.com"
 
-# OAuth URLs
+# OAuth URLs (for user reference in setup instructions)
 GOOGLE_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 APPLE_AUTHORIZE_URL = "https://appleid.apple.com/auth/authorize"
-APPLE_TOKEN_URL = "https://appleid.apple.com/auth/token"

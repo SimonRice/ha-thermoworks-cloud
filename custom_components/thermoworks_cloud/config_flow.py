@@ -8,29 +8,23 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.components.http import KEY_HASS, HomeAssistantView
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from thermoworks_cloud import AuthenticationError, AuthFactory, ThermoworksCloud
 
 from .const import (
     APPLE_AUTHORIZE_URL,
     APPLE_PROVIDER_ID,
-    APPLE_TOKEN_URL,
     AUTH_METHOD_APPLE,
     AUTH_METHOD_EMAIL,
     AUTH_METHOD_GOOGLE,
     CONF_AUTH_METHOD,
-    CONF_CLIENT_ID,
-    CONF_CLIENT_SECRET,
     DEFAULT_SCAN_INTERVAL_SECONDS,
     DOMAIN,
     GOOGLE_AUTHORIZE_URL,
     GOOGLE_PROVIDER_ID,
-    GOOGLE_TOKEN_URL,
     MIN_SCAN_INTERVAL_SECONDS,
 )
 
@@ -48,13 +42,6 @@ EMAIL_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_EMAIL): str,
         vol.Required(CONF_PASSWORD): str,
-    }
-)
-
-OAUTH_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_CLIENT_ID): str,
-        vol.Required(CONF_CLIENT_SECRET): str,
     }
 )
 
@@ -99,56 +86,12 @@ async def validate_oauth(
     return {"title": "ThermoWorks Cloud", "user": auth.user_id}
 
 
-class ThermoworksOAuth2Implementation(config_entry_oauth2_flow.LocalOAuth2Implementation):
-    """Custom OAuth2 implementation for ThermoWorks."""
-
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        domain: str,
-        client_id: str,
-        client_secret: str,
-        authorize_url: str,
-        token_url: str,
-    ) -> None:
-        """Initialize the OAuth2 implementation."""
-        super().__init__(
-            hass,
-            domain,
-            client_id,
-            client_secret,
-            authorize_url,
-            token_url,
-        )
-
-    @property
-    def extra_authorize_data(self) -> dict[str, Any]:
-        """Extra data for authorization request."""
-        return {
-            "scope": "openid email profile",
-        }
-
-
-class ConfigFlow(
-    config_entries.ConfigFlow, config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMAIN
-):
+class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for ThermoWorks Cloud."""
 
     VERSION = 1
-    DOMAIN = DOMAIN
 
     _auth_method: str | None = None
-    _oauth_data: dict[str, Any] = {}
-
-    @property
-    def logger(self) -> logging.Logger:
-        """Return logger."""
-        return _LOGGER
-
-    @property
-    def extra_authorize_data(self) -> dict[str, Any]:
-        """Extra data for OAuth authorization."""
-        return {"scope": "openid email profile"}
 
     @staticmethod
     @callback
@@ -168,9 +111,9 @@ class ConfigFlow(
             if self._auth_method == AUTH_METHOD_EMAIL:
                 return await self.async_step_email()
             elif self._auth_method == AUTH_METHOD_GOOGLE:
-                return await self.async_step_google_credentials()
+                return await self.async_step_google_oauth()
             elif self._auth_method == AUTH_METHOD_APPLE:
-                return await self.async_step_apple_credentials()
+                return await self.async_step_apple_oauth()
 
         return self.async_show_form(
             step_id="user",
@@ -207,119 +150,87 @@ class ConfigFlow(
             step_id="email", data_schema=EMAIL_SCHEMA, errors=errors
         )
 
-    async def async_step_google_credentials(
+    async def async_step_google_oauth(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
-        """Handle Google OAuth credentials input."""
+        """Handle Google OAuth ID token input."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            self._oauth_data = {
-                CONF_CLIENT_ID: user_input[CONF_CLIENT_ID],
-                CONF_CLIENT_SECRET: user_input[CONF_CLIENT_SECRET],
-                "provider_id": GOOGLE_PROVIDER_ID,
-                "provider_name": "Google",
-            }
+            try:
+                id_token = user_input["id_token"]
+                info = await validate_oauth(self.hass, id_token, GOOGLE_PROVIDER_ID)
 
-            # Create OAuth implementation
-            self.async_register_implementation(
-                self.hass,
-                ThermoworksOAuth2Implementation(
-                    self.hass,
-                    DOMAIN,
-                    user_input[CONF_CLIENT_ID],
-                    user_input[CONF_CLIENT_SECRET],
-                    GOOGLE_AUTHORIZE_URL,
-                    GOOGLE_TOKEN_URL,
-                ),
-            )
+                await self.async_set_unique_id(info.get("user"))
+                self._abort_if_unique_id_configured()
 
-            return await self.async_step_oauth()
+                data = {
+                    CONF_AUTH_METHOD: AUTH_METHOD_GOOGLE,
+                    "id_token": id_token,
+                    "provider_id": GOOGLE_PROVIDER_ID,
+                }
+                return self.async_create_entry(
+                    title="ThermoWorks Cloud (Google)", data=data
+                )
+
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except Exception as e:
+                _LOGGER.exception(f"Unexpected exception: {e}")
+                errors["base"] = "unknown"
+
+        schema = vol.Schema({vol.Required("id_token"): str})
 
         return self.async_show_form(
-            step_id="google_credentials",
-            data_schema=OAUTH_SCHEMA,
+            step_id="google_oauth",
+            data_schema=schema,
             errors=errors,
             description_placeholders={
-                "setup_url": "https://console.cloud.google.com/apis/credentials"
+                "auth_url": f"{GOOGLE_AUTHORIZE_URL}?client_id=YOUR_CLIENT_ID&redirect_uri=https://your-ha-instance/&response_type=id_token&scope=openid email profile&nonce=123"
             },
         )
 
-    async def async_step_apple_credentials(
+    async def async_step_apple_oauth(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
-        """Handle Apple OAuth credentials input."""
+        """Handle Apple OAuth ID token input."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            self._oauth_data = {
-                CONF_CLIENT_ID: user_input[CONF_CLIENT_ID],
-                CONF_CLIENT_SECRET: user_input[CONF_CLIENT_SECRET],
-                "provider_id": APPLE_PROVIDER_ID,
-                "provider_name": "Apple",
-            }
+            try:
+                id_token = user_input["id_token"]
+                info = await validate_oauth(self.hass, id_token, APPLE_PROVIDER_ID)
 
-            # Create OAuth implementation
-            self.async_register_implementation(
-                self.hass,
-                ThermoworksOAuth2Implementation(
-                    self.hass,
-                    DOMAIN,
-                    user_input[CONF_CLIENT_ID],
-                    user_input[CONF_CLIENT_SECRET],
-                    APPLE_AUTHORIZE_URL,
-                    APPLE_TOKEN_URL,
-                ),
-            )
+                await self.async_set_unique_id(info.get("user"))
+                self._abort_if_unique_id_configured()
 
-            return await self.async_step_oauth()
+                data = {
+                    CONF_AUTH_METHOD: AUTH_METHOD_APPLE,
+                    "id_token": id_token,
+                    "provider_id": APPLE_PROVIDER_ID,
+                }
+                return self.async_create_entry(
+                    title="ThermoWorks Cloud (Apple)", data=data
+                )
+
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except Exception as e:
+                _LOGGER.exception(f"Unexpected exception: {e}")
+                errors["base"] = "unknown"
+
+        schema = vol.Schema({vol.Required("id_token"): str})
 
         return self.async_show_form(
-            step_id="apple_credentials",
-            data_schema=OAUTH_SCHEMA,
+            step_id="apple_oauth",
+            data_schema=schema,
             errors=errors,
             description_placeholders={
-                "setup_url": "https://developer.apple.com/account/resources/identifiers/list/serviceId"
+                "auth_url": f"{APPLE_AUTHORIZE_URL}?client_id=YOUR_CLIENT_ID&redirect_uri=https://your-ha-instance/&response_type=id_token&scope=openid email&nonce=123"
             },
         )
-
-    async def async_oauth_create_entry(self, data: dict[str, Any]) -> config_entries.ConfigFlowResult:
-        """Create entry from OAuth callback."""
-        try:
-            # Extract ID token from OAuth token response
-            token_data = data.get("token", {})
-            id_token = token_data.get("id_token")
-
-            if not id_token:
-                _LOGGER.error("No ID token in OAuth response")
-                return self.async_abort(reason="no_id_token")
-
-            # Validate with Firebase
-            info = await validate_oauth(
-                self.hass, id_token, self._oauth_data["provider_id"]
-            )
-
-            await self.async_set_unique_id(info.get("user"))
-            self._abort_if_unique_id_configured()
-
-            # Store auth method and OAuth data
-            entry_data = {
-                CONF_AUTH_METHOD: AUTH_METHOD_GOOGLE if self._oauth_data["provider_id"] == GOOGLE_PROVIDER_ID else AUTH_METHOD_APPLE,
-                CONF_CLIENT_ID: self._oauth_data[CONF_CLIENT_ID],
-                CONF_CLIENT_SECRET: self._oauth_data[CONF_CLIENT_SECRET],
-                "token": token_data,
-            }
-
-            return self.async_create_entry(
-                title=f"ThermoWorks Cloud ({self._oauth_data['provider_name']})",
-                data=entry_data,
-            )
-
-        except InvalidAuth:
-            return self.async_abort(reason="invalid_auth")
-        except CannotConnect:
-            return self.async_abort(reason="cannot_connect")
-        except Exception as e:
-            _LOGGER.exception(f"Error creating OAuth entry: {e}")
-            return self.async_abort(reason="unknown")
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):

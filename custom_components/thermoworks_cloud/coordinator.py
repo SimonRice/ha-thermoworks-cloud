@@ -3,9 +3,6 @@
 from dataclasses import dataclass
 from datetime import timedelta
 import logging
-from typing import Any
-
-import aiohttp
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, CONF_SCAN_INTERVAL
@@ -15,18 +12,12 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from thermoworks_cloud import AuthFactory, ThermoworksCloud, ResourceNotFoundError
 
 from .const import (
-    APPLE_PROVIDER_ID,
-    APPLE_TOKEN_URL,
     AUTH_METHOD_APPLE,
     AUTH_METHOD_EMAIL,
     AUTH_METHOD_GOOGLE,
     CONF_AUTH_METHOD,
-    CONF_CLIENT_ID,
-    CONF_CLIENT_SECRET,
     DEFAULT_SCAN_INTERVAL_SECONDS,
     DOMAIN,
-    GOOGLE_PROVIDER_ID,
-    GOOGLE_TOKEN_URL,
 )
 from .exceptions import MissingRequiredAttributeError
 from .models import ThermoworksDevice, ThermoworksChannel
@@ -65,9 +56,8 @@ class ThermoworksCoordinator(DataUpdateCoordinator[ThermoworksData]):
             self.auth_method = AUTH_METHOD_EMAIL
         elif auth_method in [AUTH_METHOD_GOOGLE, AUTH_METHOD_APPLE]:
             self.auth_method = auth_method
-            self.oauth_client_id = config_entry.data[CONF_CLIENT_ID]
-            self.oauth_client_secret = config_entry.data[CONF_CLIENT_SECRET]
-            self.oauth_token = config_entry.data.get("token", {})
+            self.oauth_id_token = config_entry.data.get("id_token")
+            self.oauth_provider_id = config_entry.data.get("provider_id")
         else:
             raise ValueError(f"Unknown auth method: {auth_method}")
 
@@ -88,64 +78,6 @@ class ThermoworksCoordinator(DataUpdateCoordinator[ThermoworksData]):
         self.auth_factory = AuthFactory(client_session)
         self.api = None
 
-    async def _get_oauth_id_token(self) -> str:
-        """Get a valid OAuth ID token, refreshing if necessary."""
-        # Check if we have a valid ID token
-        id_token = self.oauth_token.get("id_token")
-
-        if not id_token:
-            # Need to refresh the OAuth token
-            _LOGGER.debug("No ID token found, refreshing OAuth token")
-            await self._refresh_oauth_token()
-            id_token = self.oauth_token.get("id_token")
-
-        return id_token
-
-    async def _refresh_oauth_token(self) -> None:
-        """Refresh the OAuth access token using the refresh token."""
-        refresh_token = self.oauth_token.get("refresh_token")
-
-        if not refresh_token:
-            raise UpdateFailed("No refresh token available for OAuth")
-
-        # Determine token URL based on provider
-        if self.auth_method == AUTH_METHOD_GOOGLE:
-            token_url = GOOGLE_TOKEN_URL
-        elif self.auth_method == AUTH_METHOD_APPLE:
-            token_url = APPLE_TOKEN_URL
-        else:
-            raise UpdateFailed(f"Unknown OAuth provider: {self.auth_method}")
-
-        # Refresh the token
-        client_session = async_get_clientsession(self.hass)
-
-        try:
-            async with client_session.post(
-                token_url,
-                data={
-                    "client_id": self.oauth_client_id,
-                    "client_secret": self.oauth_client_secret,
-                    "refresh_token": refresh_token,
-                    "grant_type": "refresh_token",
-                },
-            ) as response:
-                response.raise_for_status()
-                token_data = await response.json()
-
-                # Update stored token data
-                self.oauth_token.update(token_data)
-
-                # Update config entry with new token data
-                new_data = dict(self.config_entry.data)
-                new_data["token"] = self.oauth_token
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry, data=new_data
-                )
-
-                _LOGGER.debug("Successfully refreshed OAuth token")
-
-        except aiohttp.ClientError as err:
-            raise UpdateFailed(f"Failed to refresh OAuth token: {err}") from err
 
     async def async_update_data(self) -> ThermoworksData:
         """Fetch data from API endpoint."""
@@ -166,14 +98,8 @@ class ThermoworksCoordinator(DataUpdateCoordinator[ThermoworksData]):
                         "Initializing Thermoworks Cloud API connection with %s OAuth",
                         self.auth_method,
                     )
-                    id_token = await self._get_oauth_id_token()
-                    provider_id = (
-                        GOOGLE_PROVIDER_ID
-                        if self.auth_method == AUTH_METHOD_GOOGLE
-                        else APPLE_PROVIDER_ID
-                    )
                     auth = await self.auth_factory.build_auth_with_oauth(
-                        id_token, provider_id
+                        self.oauth_id_token, self.oauth_provider_id
                     )
                 else:
                     raise UpdateFailed(f"Unknown auth method: {self.auth_method}")

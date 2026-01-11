@@ -19,20 +19,18 @@
           "password": "[%key:common::config_flow::data::password%]"
         }
       },
-      "google_credentials": {
-        "title": "Google OAuth Setup",
-        "description": "Create a Google OAuth 2.0 Client at {setup_url}, then enter your credentials below.\n\nFor Authorized redirect URIs, use: `{redirect_uri}`",
+      "google_oauth": {
+        "title": "Google Sign In",
+        "description": "1. Sign in to your Google account linked to ThermoWorks\n2. Visit this URL (replace YOUR_CLIENT_ID with your Google OAuth Client ID):\n{auth_url}\n3. After authorizing, copy the ID token from the URL fragment\n4. Paste it below",
         "data": {
-          "client_id": "OAuth Client ID",
-          "client_secret": "OAuth Client Secret"
+          "id_token": "Google ID Token"
         }
       },
-      "apple_credentials": {
-        "title": "Apple Sign In Setup",
-        "description": "Create a Sign in with Apple Service ID at {setup_url}, then enter your credentials below.\n\nFor Return URLs, use: `{redirect_uri}`",
+      "apple_oauth": {
+        "title": "Apple Sign In",
+        "description": "1. Sign in to your Apple ID linked to ThermoWorks\n2. Visit this URL (replace YOUR_CLIENT_ID with your Apple Service ID):\n{auth_url}\n3. After authorizing, copy the ID token from the URL fragment\n4. Paste it below",
         "data": {
-          "client_id": "Service ID (Client ID)",
-          "client_secret": "Client Secret (Generated JWT)"
+          "id_token": "Apple ID Token"
         }
       }
     },
